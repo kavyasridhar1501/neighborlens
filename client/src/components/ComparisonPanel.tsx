@@ -1,12 +1,3 @@
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from 'recharts';
 import type { Neighborhood } from '../types/neighborhood';
 import { SentimentBadge } from './SentimentBadge';
 import { VibeTag } from './VibeTag';
@@ -26,24 +17,6 @@ export function ComparisonPanel({ neighborhoods }: ComparisonPanelProps) {
   const { removeFromComparison } = useComparison();
 
   const [a, b] = neighborhoods;
-
-  const chartData = [
-    {
-      name: 'Walk',
-      [a?.name ?? 'A']: a?.walkScore ?? 0,
-      ...(b ? { [b.name]: b.walkScore } : {}),
-    },
-    {
-      name: 'Transit',
-      [a?.name ?? 'A']: a?.transitScore ?? 0,
-      ...(b ? { [b.name]: b.transitScore } : {}),
-    },
-    {
-      name: 'Bike',
-      [a?.name ?? 'A']: a?.bikeScore ?? 0,
-      ...(b ? { [b.name]: b.bikeScore } : {}),
-    },
-  ];
 
   return (
     <div className="space-y-8">
@@ -75,36 +48,6 @@ export function ComparisonPanel({ neighborhoods }: ComparisonPanelProps) {
         )}
       </div>
 
-      {/* Grouped bar chart */}
-      {a && (
-        <div className="bg-white rounded-2xl shadow-md p-6">
-          <h3 className="text-sm font-semibold text-gray-700 mb-4">
-            Mobility Score Comparison
-          </h3>
-          <div className="h-52">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 0, right: 16, bottom: 0, left: 0 }}>
-                <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} />
-                <Tooltip />
-                <Legend />
-                <Bar
-                  dataKey={a.name}
-                  fill={COLORS[0]}
-                  radius={[4, 4, 0, 0]}
-                />
-                {b && (
-                  <Bar
-                    dataKey={b.name}
-                    fill={COLORS[1]}
-                    radius={[4, 4, 0, 0]}
-                  />
-                )}
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -147,21 +90,6 @@ function NeighborhoodColumn({
           ))}
         </div>
       )}
-
-      <div className="grid grid-cols-3 gap-2 pt-2 border-t border-gray-100 text-center">
-        <div>
-          <p className="text-[10px] text-gray-500">Walk</p>
-          <p className="text-sm font-bold text-gray-900">{n.walkScore}</p>
-        </div>
-        <div>
-          <p className="text-[10px] text-gray-500">Transit</p>
-          <p className="text-sm font-bold text-gray-900">{n.transitScore}</p>
-        </div>
-        <div>
-          <p className="text-[10px] text-gray-500">Bike</p>
-          <p className="text-sm font-bold text-gray-900">{n.bikeScore}</p>
-        </div>
-      </div>
 
       {onRemove && (
         <button

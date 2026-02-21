@@ -24,9 +24,6 @@ export interface Neighborhood {
   sentimentScore: number;
   vibeSummary: string;
   lifestyleTags: string[];
-  walkScore: number;
-  transitScore: number;
-  bikeScore: number;
   createdAt: string;
 }
 
