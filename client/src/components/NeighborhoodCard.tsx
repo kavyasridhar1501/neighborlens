@@ -1,12 +1,3 @@
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  Cell,
-} from 'recharts';
 import type { Neighborhood } from '../types/neighborhood';
 import { SentimentBadge } from './SentimentBadge';
 import { VibeTag } from './VibeTag';
@@ -16,8 +7,6 @@ interface NeighborhoodCardProps {
   neighborhood: Neighborhood;
 }
 
-const SCORE_COLORS = ['#6366f1', '#0ea5e9', '#10b981'] as const;
-
 /**
  * Displays a comprehensive neighborhood intelligence card with scores,
  * sentiment, vibe summary, lifestyle tags, and census demographics.
@@ -26,12 +15,6 @@ export function NeighborhoodCard({ neighborhood: n }: NeighborhoodCardProps) {
   const { pinned, addToComparison } = useComparison();
   const isPinned = pinned.some((p) => p._id === n._id);
   const atCapacity = pinned.length >= 2 && !isPinned;
-
-  const chartData = [
-    { name: 'Walk', score: n.walkScore },
-    { name: 'Transit', score: n.transitScore },
-    { name: 'Bike', score: n.bikeScore },
-  ];
 
   const census = n.rawData.census;
 
@@ -57,31 +40,6 @@ export function NeighborhoodCard({ neighborhood: n }: NeighborhoodCardProps) {
           ))}
         </div>
       )}
-
-      {/* Scores chart */}
-      <div className="h-36">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart
-            data={chartData}
-            layout="vertical"
-            margin={{ top: 0, right: 32, bottom: 0, left: 8 }}
-          >
-            <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11 }} />
-            <YAxis
-              type="category"
-              dataKey="name"
-              tick={{ fontSize: 12 }}
-              width={48}
-            />
-            <Tooltip formatter={(v: number) => [`${v}`, 'Score']} />
-            <Bar dataKey="score" radius={[0, 4, 4, 0]}>
-              {chartData.map((_, i) => (
-                <Cell key={i} fill={SCORE_COLORS[i % SCORE_COLORS.length]} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
 
       {/* Census row */}
       <div className="grid grid-cols-3 gap-4 pt-2 border-t border-gray-100">

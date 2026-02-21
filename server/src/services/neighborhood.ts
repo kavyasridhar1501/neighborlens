@@ -18,13 +18,6 @@ interface GeocoderResult {
 /** Census ACS5 row: [NAME, population, medianIncome, medianAge, geoId] */
 type CensusRow = [string, string, string, string, string];
 
-/** Walk Score API response */
-interface WalkScoreResponse {
-  walkscore?: number;
-  transit?: { score?: number };
-  bike?: { score?: number };
-}
-
 /** Reddit search API response */
 interface RedditResponse {
   data: {
@@ -123,39 +116,6 @@ async function fetchCensusData(zip: string): Promise<{
     };
   } catch {
     return { name: `ZIP ${zip}`, population: 0, medianIncome: 0, medianAge: 0 };
-  }
-}
-
-/**
- * Fetches Walk, Transit, and Bike scores from the Walk Score API.
- * Requires a lat/lon for accurate results.
- */
-async function fetchWalkScore(
-  address: string,
-  lat: number,
-  lon: number
-): Promise<{ walkScore: number; transitScore: number; bikeScore: number }> {
-  try {
-    const url = new URL('https://api.walkscore.com/score');
-    url.searchParams.set('format', 'json');
-    url.searchParams.set('address', address);
-    url.searchParams.set('lat', String(lat));
-    url.searchParams.set('lon', String(lon));
-    url.searchParams.set('transit', '1');
-    url.searchParams.set('bike', '1');
-    url.searchParams.set('wsapikey', process.env.WALKSCORE_API_KEY ?? '');
-
-    const res = await fetch(url.toString());
-    if (!res.ok) return { walkScore: 0, transitScore: 0, bikeScore: 0 };
-
-    const data = (await res.json()) as WalkScoreResponse;
-    return {
-      walkScore: data.walkscore ?? 0,
-      transitScore: data.transit?.score ?? 0,
-      bikeScore: data.bike?.score ?? 0,
-    };
-  } catch {
-    return { walkScore: 0, transitScore: 0, bikeScore: 0 };
   }
 }
 
@@ -277,15 +237,9 @@ export async function getNeighborhoodData(
   const cached = await checkCache(zip);
   if (cached) return cached;
 
-  // 2. Geocode so we have lat/lon for Walk Score
-  const coords = await geocodeAddress(normalizedQuery);
-  const lat = coords?.lat ?? 0;
-  const lon = coords?.lon ?? 0;
-
-  // 3. Fetch external data in parallel
-  const [censusData, walkData, redditPosts, placesData] = await Promise.all([
+  // 2. Fetch external data in parallel
+  const [censusData, redditPosts, placesData] = await Promise.all([
     fetchCensusData(zip),
-    fetchWalkScore(normalizedQuery, lat, lon),
     fetchRedditPosts(normalizedQuery),
     fetchGooglePlacesData(normalizedQuery),
   ]);
@@ -323,8 +277,5 @@ export async function getNeighborhoodData(
     sentimentScore,
     vibeSummary,
     lifestyleTags,
-    walkScore: walkData.walkScore,
-    transitScore: walkData.transitScore,
-    bikeScore: walkData.bikeScore,
   } as Parameters<typeof saveToCache>[0]);
 }

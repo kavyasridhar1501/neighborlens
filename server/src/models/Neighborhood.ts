@@ -9,9 +9,6 @@ export interface INeighborhood extends Document {
   sentimentScore: number;
   vibeSummary: string;
   lifestyleTags: string[];
-  walkScore: number;
-  transitScore: number;
-  bikeScore: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -25,9 +22,6 @@ const NeighborhoodSchema = new Schema<INeighborhood>(
     sentimentScore: { type: Number, required: true, min: 0, max: 1 },
     vibeSummary: { type: String, required: true },
     lifestyleTags: { type: [String], default: [] },
-    walkScore: { type: Number, required: true },
-    transitScore: { type: Number, required: true },
-    bikeScore: { type: Number, required: true },
   },
   { timestamps: true }
 );
