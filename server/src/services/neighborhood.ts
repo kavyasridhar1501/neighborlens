@@ -49,8 +49,14 @@ function isZip(query: string): boolean {
 
 /**
  * Resolves any US location query (city, state, city+state, city+country, or ZIP)
- * to a 5-digit ZIP code using Google Geocoding address components.
- * Returns the original query unchanged if it is already a ZIP or resolution fails.
+ * to a 5-digit ZIP code.
+ *
+ * Strategy:
+ *  1. Forward geocode the query to get coordinates + formatted display name.
+ *  2. If the forward geocode result already has a postal_code component, use it.
+ *  3. Otherwise reverse-geocode the returned lat/lng with result_type=postal_code
+ *     — this works for broad city/neighborhood inputs that return no postal code
+ *     in their own address components (e.g. "Brooklyn NY", "Austin TX").
  */
 async function resolveToZip(
   query: string
@@ -59,6 +65,8 @@ async function resolveToZip(
 
   try {
     const apiKey = process.env.GOOGLE_PLACES_API_KEY ?? '';
+
+    // Step 1: forward geocode
     const geoUrl = new URL('https://maps.googleapis.com/maps/api/geocode/json');
     geoUrl.searchParams.set('address', query);
     geoUrl.searchParams.set('components', 'country:US');
@@ -82,18 +90,37 @@ async function resolveToZip(
       return { zip: query, displayName: query };
     }
 
-    const postalComponent = topResult.address_components.find((c) =>
-      c.types.includes('postal_code')
-    );
-
-    const resolvedZip =
-      postalComponent && /^\d{5}$/.test(postalComponent.short_name)
-        ? postalComponent.short_name
-        : query;
-
-    // Build a clean display name from formatted_address (drop country suffix)
     const displayName =
       topResult.formatted_address.replace(/,\s*USA$/, '').trim() || query;
+
+    // Check if the forward geocode already returned a postal code
+    let postalCode = topResult.address_components.find((c) =>
+      c.types.includes('postal_code')
+    )?.short_name;
+
+    // Step 2: reverse geocode from coordinates when no postal code was returned
+    // (city/neighborhood queries rarely include postal_code in their own result)
+    if (!postalCode || !/^\d{5}$/.test(postalCode)) {
+      const { lat, lng } = topResult.geometry.location;
+      const revUrl = new URL('https://maps.googleapis.com/maps/api/geocode/json');
+      revUrl.searchParams.set('latlng', `${lat},${lng}`);
+      revUrl.searchParams.set('result_type', 'postal_code');
+      revUrl.searchParams.set('key', apiKey);
+
+      const revRes = await fetch(revUrl.toString());
+      if (revRes.ok) {
+        const revData = (await revRes.json()) as GoogleGeocodeResult;
+        const zipResult = revData.results[0];
+        if (zipResult) {
+          postalCode = zipResult.address_components.find((c) =>
+            c.types.includes('postal_code')
+          )?.short_name;
+        }
+      }
+    }
+
+    const resolvedZip =
+      postalCode && /^\d{5}$/.test(postalCode) ? postalCode : query;
 
     console.log(`[Geocode] "${query}" → ZIP ${resolvedZip} (${displayName})`);
     return { zip: resolvedZip, displayName };
