@@ -2,63 +2,72 @@ import { useState } from 'react';
 import { SearchBar } from '../components/SearchBar';
 import { NeighborhoodCard } from '../components/NeighborhoodCard';
 import { LoadingSkeleton } from '../components/LoadingSkeleton';
+import { MapView } from '../components/MapView';
 import { useNeighborhood } from '../hooks/useNeighborhood';
 
-/**
- * Home page with hero section, search bar, and neighborhood results.
- */
 export function Home() {
   const [query, setQuery] = useState('');
-
   const { data, isLoading, isError, error } = useNeighborhood(query);
 
-  function handleSearch(q: string) {
-    setQuery(q);
-  }
+  const hasResult = !!data && !isLoading;
 
   return (
-    <main className="min-h-screen bg-gray-50">
+    <main className="min-h-screen bg-stone-50">
       {/* Hero */}
-      <section className="bg-gradient-to-br from-indigo-600 to-violet-700 text-white py-20 px-4">
-        <div className="max-w-5xl mx-auto text-center space-y-4">
-          <h1 className="text-4xl sm:text-5xl font-extrabold leading-tight">
-            Know Your Neighborhood
-            <br />
-            Before You Move
-          </h1>
-          <p className="text-indigo-200 text-lg max-w-xl mx-auto">
-            AI-powered insights on walkability, sentiment, lifestyle, and
-            demographics for any US neighborhood.
-          </p>
-          <div className="flex justify-center pt-2">
-            <SearchBar onSearch={handleSearch} isLoading={isLoading} />
+      <section className="bg-zinc-950 text-white px-6 py-14">
+        <div className="max-w-6xl mx-auto space-y-5">
+          <div>
+            <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight leading-tight">
+              Know your neighborhood
+              <br />
+              <span className="text-zinc-400 font-light">before you move.</span>
+            </h1>
+            <p className="text-zinc-500 text-sm mt-3 max-w-md">
+              Demographics, sentiment, walkability, and lifestyle insights for any US city or ZIP.
+            </p>
           </div>
+          <SearchBar onSearch={setQuery} isLoading={isLoading} />
         </div>
       </section>
 
-      {/* Results */}
-      <section className="max-w-5xl mx-auto px-4 py-12 flex flex-col items-center gap-6">
-        {isLoading && <LoadingSkeleton />}
-
+      {/* Map + Results layout */}
+      <section className="max-w-6xl mx-auto px-6 py-8">
         {isError && (
-          <div className="w-full max-w-2xl bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">
+          <div className="mb-6 bg-white border border-red-200 rounded-xl p-4 text-red-600 text-sm">
             {error?.message ?? 'Something went wrong. Please try again.'}
           </div>
         )}
 
-        {data && !isLoading && <NeighborhoodCard neighborhood={data} />}
-
-        {!query && !isLoading && (
-          <div className="text-center text-gray-400 py-12">
-            <p className="text-5xl mb-4">🗺️</p>
-            <p className="text-lg font-medium text-gray-500">
-              Search any US city or ZIP code to get started
-            </p>
-            <p className="text-sm mt-1">
-              e.g., &ldquo;Brooklyn NY&rdquo;, &ldquo;Austin TX&rdquo;, or
-              &ldquo;94102&rdquo;
-            </p>
+        <div className={`flex gap-6 ${hasResult || isLoading ? 'flex-col lg:flex-row items-start' : 'flex-col'}`}>
+          {/* Map — always visible */}
+          <div
+            className={`w-full ${
+              hasResult || isLoading
+                ? 'lg:flex-1 h-[420px]'
+                : 'h-[480px]'
+            }`}
+          >
+            <MapView
+              lat={data?.lat}
+              lng={data?.lng}
+              label={data?.name}
+              className="h-full"
+            />
           </div>
+
+          {/* Card / skeleton — only when there's a query */}
+          {(isLoading || hasResult) && (
+            <div className="w-full lg:w-96 flex-shrink-0">
+              {isLoading ? <LoadingSkeleton /> : data && <NeighborhoodCard neighborhood={data} />}
+            </div>
+          )}
+        </div>
+
+        {/* Empty state hint */}
+        {!query && !isLoading && (
+          <p className="text-center text-zinc-400 text-sm mt-6">
+            Search a city or ZIP above — e.g. &ldquo;Brooklyn NY&rdquo;, &ldquo;Austin TX&rdquo;, &ldquo;94102&rdquo;
+          </p>
         )}
       </section>
     </main>

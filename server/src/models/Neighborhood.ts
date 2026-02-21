@@ -4,6 +4,8 @@ import mongoose, { Document, Schema } from 'mongoose';
 export interface INeighborhood extends Document {
   name: string;
   zip: string;
+  lat?: number;
+  lng?: number;
   cachedAt: Date;
   rawData: Record<string, unknown>;
   sentimentScore: number;
@@ -17,6 +19,8 @@ const NeighborhoodSchema = new Schema<INeighborhood>(
   {
     name: { type: String, required: true },
     zip: { type: String, required: true, unique: true },
+    lat: { type: Number },
+    lng: { type: Number },
     cachedAt: { type: Date, required: true },
     rawData: { type: Schema.Types.Mixed },
     sentimentScore: { type: Number, required: true, min: 0, max: 1 },

@@ -60,12 +60,14 @@ function isZip(query: string): boolean {
  */
 async function resolveToZip(
   query: string
-): Promise<{ zip: string; displayName: string }> {
+): Promise<{ zip: string; displayName: string; lat?: number; lng?: number }> {
   if (isZip(query)) return { zip: query, displayName: query };
 
   const apiKey = process.env.GOOGLE_PLACES_API_KEY ?? '';
   let displayName = query;
   let resolvedZip: string | null = null;
+  let coordLat: number | undefined;
+  let coordLng: number | undefined;
 
   // --- Strategy 1 & 2: Google Geocoding ---
   try {
@@ -82,6 +84,8 @@ async function resolveToZip(
       if (topResult) {
         displayName =
           topResult.formatted_address.replace(/,\s*USA$/, '').trim() || query;
+        coordLat = topResult.geometry.location.lat;
+        coordLng = topResult.geometry.location.lng;
 
         // Check for postal_code directly in address components
         let postalCode = topResult.address_components.find((c) =>
@@ -162,7 +166,7 @@ async function resolveToZip(
     console.warn(`[Geocode] Could not resolve ZIP for "${query}"`);
   }
 
-  return { zip: resolvedZip ?? query, displayName };
+  return { zip: resolvedZip ?? query, displayName, lat: coordLat, lng: coordLng };
 }
 
 /**
@@ -251,6 +255,8 @@ async function fetchRedditPosts(query: string): Promise<string[]> {
 async function fetchGooglePlacesData(query: string): Promise<{
   amenities: string[];
   reviews: string[];
+  lat?: number;
+  lng?: number;
 }> {
   try {
     const apiKey = process.env.GOOGLE_PLACES_API_KEY ?? '';
@@ -319,7 +325,7 @@ async function fetchGooglePlacesData(query: string): Promise<{
       })
     );
 
-    return { amenities, reviews };
+    return { amenities, reviews, lat: loc.lat, lng: loc.lng };
   } catch {
     return { amenities: [], reviews: [] };
   }
@@ -427,7 +433,7 @@ export async function getNeighborhoodData(
   const normalizedQuery = query.trim();
 
   // 1. Resolve city/state/country → ZIP code first so the cache key is always a clean ZIP
-  const { zip, displayName: geocodedName } = await resolveToZip(normalizedQuery);
+  const { zip, displayName: geocodedName, lat: resolvedLat, lng: resolvedLng } = await resolveToZip(normalizedQuery);
 
   // 2. Check cache by resolved ZIP (skips any old entries where zip was stored as raw text)
   const cached = await checkCache(zip);
@@ -463,10 +469,16 @@ export async function getNeighborhoodData(
     communityTextCount: communityTexts.length,
   });
 
+  // Prefer resolveToZip coordinates; fall back to coordinates from Places geocode
+  const lat = resolvedLat ?? placesData.lat;
+  const lng = resolvedLng ?? placesData.lng;
+
   // 7. Save to cache and return
   return saveToCache({
     name: displayName,
     zip,
+    ...(lat !== undefined && { lat }),
+    ...(lng !== undefined && { lng }),
     cachedAt: new Date(),
     rawData: {
       census: {
