@@ -92,16 +92,17 @@ async function fetchCensusData(zip: string): Promise<{
   medianAge: number;
 }> {
   try {
-    const url = new URL('https://api.census.gov/data/2021/acs/acs5');
-    url.searchParams.set(
-      'get',
-      'NAME,B01003_001E,B19013_001E,B01002_001E'
-    );
-    url.searchParams.set('for', `zip+code+tabulation+area:${zip}`);
+    // Build URL manually to avoid URLSearchParams double-encoding '+' in the geography clause
+    const censusUrl =
+      `https://api.census.gov/data/2021/acs/acs5` +
+      `?get=NAME,B01003_001E,B19013_001E,B01002_001E` +
+      `&for=zip+code+tabulation+area:${zip}`;
 
-    const res = await fetch(url.toString());
-    if (!res.ok)
+    const res = await fetch(censusUrl);
+    if (!res.ok) {
+      console.error(`[Census] HTTP ${res.status} for ZIP ${zip}`);
       return { name: `ZIP ${zip}`, population: 0, medianIncome: 0, medianAge: 0 };
+    }
 
     const rows = (await res.json()) as CensusRow[];
     const [, row] = rows; // row 0 is headers
@@ -114,7 +115,8 @@ async function fetchCensusData(zip: string): Promise<{
       medianIncome: parseInt(row[2] ?? '0', 10),
       medianAge: parseFloat(row[3] ?? '0'),
     };
-  } catch {
+  } catch (err) {
+    console.error(`[Census] Error for ZIP ${zip}:`, err);
     return { name: `ZIP ${zip}`, population: 0, medianIncome: 0, medianAge: 0 };
   }
 }
@@ -136,14 +138,20 @@ async function fetchRedditPosts(query: string): Promise<string[]> {
         'User-Agent': process.env.REDDIT_USER_AGENT ?? 'NeighborLens/1.0',
       },
     });
-    if (!res.ok) return [];
+    if (!res.ok) {
+      console.error(`[Reddit] HTTP ${res.status} for query "${query}"`);
+      return [];
+    }
 
     const data = (await res.json()) as RedditResponse;
-    return data.data.children
+    const posts = data.data.children
       .map((c) => `${c.data.title} ${c.data.selftext}`.trim())
       .filter(Boolean)
       .slice(0, 10);
-  } catch {
+    console.log(`[Reddit] Fetched ${posts.length} posts for "${query}"`);
+    return posts;
+  } catch (err) {
+    console.error(`[Reddit] Error for query "${query}":`, err);
     return [];
   }
 }
@@ -166,11 +174,21 @@ async function fetchGooglePlacesData(query: string): Promise<{
     geoUrl.searchParams.set('key', apiKey);
 
     const geoRes = await fetch(geoUrl.toString());
-    if (!geoRes.ok) return { amenities: [], reviews: [] };
+    if (!geoRes.ok) {
+      console.error(`[Google] Geocode HTTP ${geoRes.status} for "${query}"`);
+      return { amenities: [], reviews: [] };
+    }
 
     const geoData = (await geoRes.json()) as GoogleGeocodeResult;
+    if ((geoData as any).error_message) {
+      console.error(`[Google] Geocode error: ${(geoData as any).error_message}`);
+      return { amenities: [], reviews: [] };
+    }
     const loc = geoData.results[0]?.geometry.location;
-    if (!loc) return { amenities: [], reviews: [] };
+    if (!loc) {
+      console.error(`[Google] No geocode results for "${query}"`);
+      return { amenities: [], reviews: [] };
+    }
 
     // Step 2: Nearby search
     const nearbyUrl = new URL(
@@ -181,9 +199,13 @@ async function fetchGooglePlacesData(query: string): Promise<{
     nearbyUrl.searchParams.set('key', apiKey);
 
     const nearbyRes = await fetch(nearbyUrl.toString());
-    if (!nearbyRes.ok) return { amenities: [], reviews: [] };
+    if (!nearbyRes.ok) {
+      console.error(`[Google] Places HTTP ${nearbyRes.status} for "${query}"`);
+      return { amenities: [], reviews: [] };
+    }
 
     const nearbyData = (await nearbyRes.json()) as GooglePlacesResult;
+    console.log(`[Google] Found ${nearbyData.results.length} places for "${query}"`);
     const places = nearbyData.results.slice(0, 10);
     const amenities = places.map((p) => p.name);
 
