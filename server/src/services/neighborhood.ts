@@ -109,11 +109,17 @@ async function fetchCensusData(zip: string): Promise<{
     if (!row)
       return { name: `ZIP ${zip}`, population: 0, medianIncome: 0, medianAge: 0 };
 
+    const CENSUS_NULL = -666666666;
+    const rawName = row[0] ?? `ZIP ${zip}`;
+    const population = parseInt(row[1] ?? '0', 10);
+    const medianIncome = parseInt(row[2] ?? '0', 10);
+    const medianAge = parseFloat(row[3] ?? '0');
+
     return {
-      name: row[0] ?? `ZIP ${zip}`,
-      population: parseInt(row[1] ?? '0', 10),
-      medianIncome: parseInt(row[2] ?? '0', 10),
-      medianAge: parseFloat(row[3] ?? '0'),
+      name: rawName.replace(/^ZCTA5\s+/, ''),
+      population: population === CENSUS_NULL ? 0 : population,
+      medianIncome: medianIncome === CENSUS_NULL ? 0 : medianIncome,
+      medianAge: medianAge === CENSUS_NULL ? 0 : medianAge,
     };
   } catch (err) {
     console.error(`[Census] Error for ZIP ${zip}:`, err);

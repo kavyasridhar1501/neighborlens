@@ -46,19 +46,19 @@ export function NeighborhoodCard({ neighborhood: n }: NeighborhoodCardProps) {
         <div>
           <p className="text-xs text-gray-500">Population</p>
           <p className="text-sm font-semibold text-gray-900">
-            {census.population.toLocaleString()}
+            {census.population > 0 ? census.population.toLocaleString() : 'N/A'}
           </p>
         </div>
         <div>
           <p className="text-xs text-gray-500">Median Income</p>
           <p className="text-sm font-semibold text-gray-900">
-            ${census.medianIncome.toLocaleString()}
+            {census.medianIncome > 0 ? `$${census.medianIncome.toLocaleString()}` : 'N/A'}
           </p>
         </div>
         <div>
           <p className="text-xs text-gray-500">Median Age</p>
           <p className="text-sm font-semibold text-gray-900">
-            {census.medianAge}
+            {census.medianAge > 0 ? census.medianAge : 'N/A'}
           </p>
         </div>
       </div>
