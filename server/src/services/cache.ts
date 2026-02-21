@@ -26,7 +26,7 @@ export async function checkCache(zip: string): Promise<INeighborhood | null> {
  * Always refreshes cachedAt to the current time.
  */
 export async function saveToCache(
-  data: Omit<INeighborhood, keyof import('mongoose').Document>
+  data: Omit<INeighborhood, keyof import('mongoose').Document | 'createdAt' | 'updatedAt'>
 ): Promise<INeighborhood> {
   const doc = await Neighborhood.findOneAndUpdate(
     { zip: (data as { zip: string }).zip },
