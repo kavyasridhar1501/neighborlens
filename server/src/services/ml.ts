@@ -46,7 +46,7 @@ export async function analyzeSentiment(texts: string[]): Promise<number> {
       return 0.5;
     });
 
-    return scores.reduce((sum, s) => sum + s, 0) / scores.length;
+    return scores.reduce<number>((sum, s) => sum + s, 0) / scores.length;
   } catch {
     return 0.5;
   }
