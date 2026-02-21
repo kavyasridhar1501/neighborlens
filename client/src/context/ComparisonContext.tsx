@@ -16,7 +16,7 @@ interface ComparisonContextValue {
 
 const ComparisonContext = createContext<ComparisonContextValue | null>(null);
 
-/** Provides comparison state for up to 2 pinned neighborhoods */
+/** Provides comparison state for any number of pinned neighborhoods */
 export function ComparisonProvider({
   children,
 }: {
@@ -26,12 +26,8 @@ export function ComparisonProvider({
 
   const addToComparison = useCallback((n: Neighborhood) => {
     setPinned((prev) => {
-      // Already pinned — no-op
       if (prev.some((p) => p._id === n._id)) return prev;
-      // Room available
-      if (prev.length < 2) return [...prev, n];
-      // Replace the oldest (index 0) when at capacity
-      return [prev[1]!, n];
+      return [...prev, n];
     });
   }, []);
 

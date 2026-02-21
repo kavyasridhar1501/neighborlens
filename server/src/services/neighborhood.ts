@@ -1,19 +1,6 @@
 import { INeighborhood } from '../models/Neighborhood';
 import { checkCache, saveToCache } from './cache';
-import {
-  analyzeSentiment,
-  generateVibeSummary,
-  classifyLifestyleTags,
-} from './ml';
-
-/** Census geocoder address result */
-interface GeocoderResult {
-  result: {
-    addressMatches: Array<{
-      coordinates: { x: number; y: number };
-    }>;
-  };
-}
+import { analyzeSentiment } from './ml';
 
 /** Census ACS5 row: [NAME, population, medianIncome, medianAge, geoId] */
 type CensusRow = [string, string, string, string, string];
@@ -54,34 +41,6 @@ function isZip(query: string): boolean {
 }
 
 /**
- * Geocodes an address to lat/lon using the Census Bureau geocoder.
- * Returns null if no match is found.
- */
-async function geocodeAddress(
-  address: string
-): Promise<{ lat: number; lon: number } | null> {
-  try {
-    const url = new URL(
-      'https://geocoding.geo.census.gov/geocoder/locations/onelineaddress'
-    );
-    url.searchParams.set('address', address);
-    url.searchParams.set('benchmark', '2020');
-    url.searchParams.set('format', 'json');
-
-    const res = await fetch(url.toString());
-    if (!res.ok) return null;
-
-    const data = (await res.json()) as GeocoderResult;
-    const match = data.result.addressMatches[0];
-    if (!match) return null;
-
-    return { lat: match.coordinates.y, lon: match.coordinates.x };
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Fetches population, median income, and median age from the
  * Census Bureau ACS5 API for the given ZIP code.
  */
@@ -92,7 +51,6 @@ async function fetchCensusData(zip: string): Promise<{
   medianAge: number;
 }> {
   try {
-    // Build URL manually to avoid URLSearchParams double-encoding '+' in the geography clause
     const censusUrl =
       `https://api.census.gov/data/2021/acs/acs5` +
       `?get=NAME,B01003_001E,B19013_001E,B01002_001E` +
@@ -172,10 +130,7 @@ async function fetchGooglePlacesData(query: string): Promise<{
   try {
     const apiKey = process.env.GOOGLE_PLACES_API_KEY ?? '';
 
-    // Step 1: Geocode the query
-    const geoUrl = new URL(
-      'https://maps.googleapis.com/maps/api/geocode/json'
-    );
+    const geoUrl = new URL('https://maps.googleapis.com/maps/api/geocode/json');
     geoUrl.searchParams.set('address', query);
     geoUrl.searchParams.set('key', apiKey);
 
@@ -196,7 +151,6 @@ async function fetchGooglePlacesData(query: string): Promise<{
       return { amenities: [], reviews: [] };
     }
 
-    // Step 2: Nearby search
     const nearbyUrl = new URL(
       'https://maps.googleapis.com/maps/api/place/nearbysearch/json'
     );
@@ -215,12 +169,9 @@ async function fetchGooglePlacesData(query: string): Promise<{
     const places = nearbyData.results.slice(0, 10);
     const amenities = places.map((p) => p.name);
 
-    // Step 3: Fetch reviews for top 3 places
     const reviews: string[] = [];
-    const topPlaces = places.slice(0, 3);
-
     await Promise.all(
-      topPlaces.map(async (place) => {
+      places.slice(0, 3).map(async (place) => {
         try {
           const detailsUrl = new URL(
             'https://maps.googleapis.com/maps/api/place/details/json'
@@ -232,8 +183,7 @@ async function fetchGooglePlacesData(query: string): Promise<{
           const detailsRes = await fetch(detailsUrl.toString());
           if (!detailsRes.ok) return;
 
-          const detailsData =
-            (await detailsRes.json()) as GooglePlaceDetailsResult;
+          const detailsData = (await detailsRes.json()) as GooglePlaceDetailsResult;
           const placeReviews = (detailsData.result.reviews ?? [])
             .slice(0, 3)
             .map((r) => r.text);
@@ -251,7 +201,98 @@ async function fetchGooglePlacesData(query: string): Promise<{
 }
 
 /**
- * Orchestrates all external API calls and ML inference for a given
+ * Builds a structured neighborhood insight summary and lifestyle tags
+ * from census demographics, amenities, and community sentiment.
+ * Works for every US ZIP — no external ML API required.
+ */
+function buildInsightSummary(params: {
+  name: string;
+  zip: string;
+  population: number;
+  medianIncome: number;
+  medianAge: number;
+  amenities: string[];
+  sentimentScore: number;
+  communityTextCount: number;
+}): { vibeSummary: string; lifestyleTags: string[] } {
+  const {
+    name,
+    zip,
+    population,
+    medianIncome,
+    medianAge,
+    amenities,
+    sentimentScore,
+    communityTextCount,
+  } = params;
+
+  const sentences: string[] = [];
+  const tags = new Set<string>();
+
+  // --- Demographics ---
+  const demoParts: string[] = [];
+  if (population > 0) demoParts.push(`population of ${population.toLocaleString()}`);
+  if (medianIncome > 0)
+    demoParts.push(`median household income of $${medianIncome.toLocaleString()}`);
+  if (medianAge > 0) demoParts.push(`median age of ${medianAge}`);
+
+  if (demoParts.length > 0) {
+    sentences.push(`${name || zip} has a ${demoParts.join(', ')}.`);
+  } else {
+    sentences.push(`${name || zip} is a US ZIP code area.`);
+  }
+
+  // Income-based tags
+  if (medianIncome >= 120_000) tags.add('expensive');
+  else if (medianIncome > 0 && medianIncome < 45_000) tags.add('up-and-coming');
+
+  // Age-based tags
+  if (medianAge > 0 && medianAge < 24) tags.add('college town');
+  else if (medianAge > 0 && medianAge < 33) tags.add('young professionals');
+  else if (medianAge > 45) tags.add('quiet');
+
+  // --- Walkability ---
+  const amenityText = amenities.map((a) => a.toLowerCase()).join(' ');
+  if (amenities.length >= 8) {
+    sentences.push(
+      `It is highly walkable with ${amenities.length} nearby places including ${amenities.slice(0, 3).join(', ')}.`
+    );
+    tags.add('walkable');
+  } else if (amenities.length >= 3) {
+    sentences.push(
+      `The area has ${amenities.length} nearby amenities such as ${amenities.slice(0, 2).join(', ')}.`
+    );
+  } else {
+    sentences.push('This area has limited walkable amenities and is primarily car-dependent.');
+    tags.add('suburban');
+  }
+
+  // Amenity-based lifestyle tags
+  if (/bar|club|lounge|brewery|pub|cocktail/.test(amenityText)) tags.add('nightlife');
+  if (/park|school|playground|library|recreation|daycare/.test(amenityText))
+    tags.add('family-friendly');
+
+  // --- Community sentiment ---
+  if (communityTextCount > 0) {
+    const label =
+      sentimentScore >= 0.66 ? 'positive' : sentimentScore >= 0.33 ? 'mixed' : 'negative';
+    sentences.push(
+      `Community sentiment is ${label} based on ${communityTextCount} local posts and reviews.`
+    );
+  } else {
+    sentences.push(
+      'No recent community posts were found — demographic and amenity data sourced from US Census and Google Places.'
+    );
+  }
+
+  return {
+    vibeSummary: sentences.join(' '),
+    lifestyleTags: [...tags],
+  };
+}
+
+/**
+ * Orchestrates all external API calls and insight generation for a given
  * neighborhood query string (city name or ZIP code).
  * Checks the 24-hour MongoDB cache first before making external requests.
  */
@@ -259,55 +300,36 @@ export async function getNeighborhoodData(
   query: string
 ): Promise<INeighborhood> {
   const normalizedQuery = query.trim();
-  const zip = isZip(normalizedQuery) ? normalizedQuery : normalizedQuery;
 
   // 1. Check cache
-  const cached = await checkCache(zip);
+  const cached = await checkCache(normalizedQuery);
   if (cached) return cached;
 
   // 2. Fetch external data in parallel
   const [censusData, redditPosts, placesData] = await Promise.all([
-    fetchCensusData(zip),
+    fetchCensusData(isZip(normalizedQuery) ? normalizedQuery : normalizedQuery),
     fetchRedditPosts(normalizedQuery),
     fetchGooglePlacesData(normalizedQuery),
   ]);
 
-  // 4. Combine review texts for ML
-  const allTexts = [
-    ...redditPosts,
-    ...placesData.reviews,
-  ].filter(Boolean);
+  // 3. Combine community texts for sentiment analysis
+  const communityTexts = [...redditPosts, ...placesData.reviews].filter(Boolean);
 
-  const mlInput = allTexts.length > 0 ? allTexts : [];
+  // 4. Sentiment score from HuggingFace (falls back to 0.5 on failure)
+  const sentimentScore =
+    communityTexts.length > 0 ? await analyzeSentiment(communityTexts) : 0.5;
 
-  // 5. Run ML services in parallel (skip if no community text to analyze)
-  const [sentimentScore, mlSummary, lifestyleTags] = await Promise.all([
-    mlInput.length > 0 ? analyzeSentiment(mlInput) : Promise.resolve(0.5),
-    mlInput.length > 0 ? generateVibeSummary(mlInput) : Promise.resolve(''),
-    mlInput.length > 0
-      ? classifyLifestyleTags(mlInput.join(' '))
-      : Promise.resolve([]),
-  ]);
-
-  // Build a census-based fallback when ML has no community text to work with
-  const vibeSummary =
-    mlSummary ||
-    (() => {
-      const parts: string[] = [];
-      if (censusData.population > 0)
-        parts.push(
-          `Population of ${censusData.population.toLocaleString()}`
-        );
-      if (censusData.medianIncome > 0)
-        parts.push(
-          `median household income $${censusData.medianIncome.toLocaleString()}`
-        );
-      if (censusData.medianAge > 0)
-        parts.push(`median age ${censusData.medianAge}`);
-      return parts.length > 0
-        ? `${censusData.name}: ${parts.join(', ')}.`
-        : 'No community data available for this area.';
-    })();
+  // 5. Build deterministic insight summary and lifestyle tags
+  const { vibeSummary, lifestyleTags } = buildInsightSummary({
+    name: censusData.name,
+    zip: normalizedQuery,
+    population: censusData.population,
+    medianIncome: censusData.medianIncome,
+    medianAge: censusData.medianAge,
+    amenities: placesData.amenities,
+    sentimentScore,
+    communityTextCount: communityTexts.length,
+  });
 
   // 6. Save to cache and return
   return saveToCache({

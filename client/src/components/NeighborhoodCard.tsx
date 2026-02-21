@@ -14,7 +14,6 @@ interface NeighborhoodCardProps {
 export function NeighborhoodCard({ neighborhood: n }: NeighborhoodCardProps) {
   const { pinned, addToComparison } = useComparison();
   const isPinned = pinned.some((p) => p._id === n._id);
-  const atCapacity = pinned.length >= 2 && !isPinned;
 
   const census = n.rawData.census;
 
@@ -66,12 +65,10 @@ export function NeighborhoodCard({ neighborhood: n }: NeighborhoodCardProps) {
       {/* Compare button */}
       <button
         onClick={() => addToComparison(n)}
-        disabled={atCapacity}
+        disabled={isPinned}
         className={`w-full py-2.5 rounded-xl text-sm font-medium transition-colors ${
           isPinned
             ? 'bg-green-100 text-green-800 cursor-default'
-            : atCapacity
-            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
             : 'bg-indigo-600 text-white hover:bg-indigo-700 active:bg-indigo-800'
         }`}
       >
