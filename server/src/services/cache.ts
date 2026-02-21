@@ -12,9 +12,11 @@ export function isFresh(cachedAt: Date): boolean {
 
 /**
  * Looks up a neighborhood by ZIP code.
- * Returns null if not found or if the cached entry is stale.
+ * Returns null if not found, stale, or if the stored ZIP is not a valid
+ * 5-digit US ZIP (guards against bad entries cached before geo-resolution).
  */
 export async function checkCache(zip: string): Promise<INeighborhood | null> {
+  if (!/^\d{5}$/.test(zip)) return null;
   const doc = await Neighborhood.findOne({ zip });
   if (!doc) return null;
   if (!isFresh(doc.cachedAt)) return null;
