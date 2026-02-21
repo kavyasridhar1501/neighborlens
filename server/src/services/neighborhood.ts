@@ -18,7 +18,14 @@ interface RedditResponse {
 interface GoogleGeocodeResult {
   results: Array<{
     geometry: { location: { lat: number; lng: number } };
+    address_components: Array<{
+      long_name: string;
+      short_name: string;
+      types: string[];
+    }>;
+    formatted_address: string;
   }>;
+  error_message?: string;
 }
 
 /** Google Places Nearby Search result */
@@ -38,6 +45,62 @@ interface GooglePlaceDetailsResult {
  */
 function isZip(query: string): boolean {
   return /^\d{5}$/.test(query.trim());
+}
+
+/**
+ * Resolves any US location query (city, state, city+state, city+country, or ZIP)
+ * to a 5-digit ZIP code using Google Geocoding address components.
+ * Returns the original query unchanged if it is already a ZIP or resolution fails.
+ */
+async function resolveToZip(
+  query: string
+): Promise<{ zip: string; displayName: string }> {
+  if (isZip(query)) return { zip: query, displayName: query };
+
+  try {
+    const apiKey = process.env.GOOGLE_PLACES_API_KEY ?? '';
+    const geoUrl = new URL('https://maps.googleapis.com/maps/api/geocode/json');
+    geoUrl.searchParams.set('address', query);
+    geoUrl.searchParams.set('components', 'country:US');
+    geoUrl.searchParams.set('key', apiKey);
+
+    const res = await fetch(geoUrl.toString());
+    if (!res.ok) {
+      console.error(`[Geocode] HTTP ${res.status} for "${query}"`);
+      return { zip: query, displayName: query };
+    }
+
+    const data = (await res.json()) as GoogleGeocodeResult;
+    if (data.error_message) {
+      console.error(`[Geocode] API error: ${data.error_message}`);
+      return { zip: query, displayName: query };
+    }
+
+    const topResult = data.results[0];
+    if (!topResult) {
+      console.warn(`[Geocode] No results for "${query}"`);
+      return { zip: query, displayName: query };
+    }
+
+    const postalComponent = topResult.address_components.find((c) =>
+      c.types.includes('postal_code')
+    );
+
+    const resolvedZip =
+      postalComponent && /^\d{5}$/.test(postalComponent.short_name)
+        ? postalComponent.short_name
+        : query;
+
+    // Build a clean display name from formatted_address (drop country suffix)
+    const displayName =
+      topResult.formatted_address.replace(/,\s*USA$/, '').trim() || query;
+
+    console.log(`[Geocode] "${query}" → ZIP ${resolvedZip} (${displayName})`);
+    return { zip: resolvedZip, displayName };
+  } catch (err) {
+    console.error(`[Geocode] Error for "${query}":`, err);
+    return { zip: query, displayName: query };
+  }
 }
 
 /**
@@ -301,28 +364,35 @@ export async function getNeighborhoodData(
 ): Promise<INeighborhood> {
   const normalizedQuery = query.trim();
 
-  // 1. Check cache
+  // 1. Check cache (keyed on the original query so "Brooklyn NY" and "11201" cache separately)
   const cached = await checkCache(normalizedQuery);
   if (cached) return cached;
 
-  // 2. Fetch external data in parallel
+  // 2. Resolve city/state/country → ZIP code for Census lookup
+  const { zip, displayName: geocodedName } = await resolveToZip(normalizedQuery);
+
+  // 3. Fetch external data in parallel (Census uses ZIP; Reddit/Places use the original query)
   const [censusData, redditPosts, placesData] = await Promise.all([
-    fetchCensusData(isZip(normalizedQuery) ? normalizedQuery : normalizedQuery),
+    fetchCensusData(zip),
     fetchRedditPosts(normalizedQuery),
     fetchGooglePlacesData(normalizedQuery),
   ]);
 
-  // 3. Combine community texts for sentiment analysis
+  // 4. Combine community texts for sentiment analysis
   const communityTexts = [...redditPosts, ...placesData.reviews].filter(Boolean);
 
-  // 4. Sentiment score from HuggingFace (falls back to 0.5 on failure)
+  // 5. Sentiment score from HuggingFace (falls back to 0.5 on failure)
   const sentimentScore =
     communityTexts.length > 0 ? await analyzeSentiment(communityTexts) : 0.5;
 
-  // 5. Build deterministic insight summary and lifestyle tags
+  // Prefer the human-readable geocoded name; fall back to what Census returned
+  const displayName =
+    !isZip(normalizedQuery) ? geocodedName : censusData.name || normalizedQuery;
+
+  // 6. Build deterministic insight summary and lifestyle tags
   const { vibeSummary, lifestyleTags } = buildInsightSummary({
-    name: censusData.name,
-    zip: normalizedQuery,
+    name: displayName,
+    zip,
     population: censusData.population,
     medianIncome: censusData.medianIncome,
     medianAge: censusData.medianAge,
@@ -331,10 +401,10 @@ export async function getNeighborhoodData(
     communityTextCount: communityTexts.length,
   });
 
-  // 6. Save to cache and return
+  // 7. Save to cache and return
   return saveToCache({
-    name: censusData.name,
-    zip: normalizedQuery,
+    name: displayName,
+    zip,
     cachedAt: new Date(),
     rawData: {
       census: {
