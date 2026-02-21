@@ -18,6 +18,8 @@ export interface Neighborhood {
   _id: string;
   name: string;
   zip: string;
+  lat?: number;
+  lng?: number;
   cachedAt: string;
   rawData: RawData;
   /** Sentiment score from 0 (negative) to 1 (positive) */

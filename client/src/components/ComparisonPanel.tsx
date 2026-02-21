@@ -7,15 +7,18 @@ interface ComparisonPanelProps {
   neighborhoods: Neighborhood[];
 }
 
+/** Muted, distinguishable accent colors for card top-borders */
 const BORDER_COLORS = [
-  '#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444',
-  '#8b5cf6', '#ec4899', '#14b8a6',
+  '#18181b', // near-black
+  '#0f766e', // teal-700
+  '#92400e', // amber-900
+  '#1e3a5f', // deep navy
+  '#374151', // slate-700
+  '#166534', // forest green
+  '#7f1d1d', // deep rust
+  '#2d4a1e', // dark olive
 ];
 
-/**
- * N-way comparison panel for any number of pinned neighborhoods.
- * Scrollable cards at the top + a full comparison table below.
- */
 export function ComparisonPanel({ neighborhoods }: ComparisonPanelProps) {
   const { removeFromComparison } = useComparison();
 
@@ -35,20 +38,17 @@ export function ComparisonPanel({ neighborhoods }: ComparisonPanelProps) {
 
       {/* Comparison table */}
       {neighborhoods.length >= 2 && (
-        <div className="overflow-x-auto rounded-2xl border border-gray-200 shadow-sm">
+        <div className="overflow-x-auto rounded-xl border border-zinc-200 shadow-sm">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide w-36">
+              <tr className="bg-zinc-50 border-b border-zinc-200">
+                <th className="text-left px-4 py-3 text-[11px] font-semibold text-zinc-400 uppercase tracking-wider w-36">
                   Metric
                 </th>
                 {neighborhoods.map((n, i) => (
-                  <th
-                    key={n._id}
-                    className="px-4 py-3 text-center font-semibold text-gray-800 text-sm"
-                  >
+                  <th key={n._id} className="px-4 py-3 text-center font-semibold text-zinc-800 text-sm">
                     <span
-                      className="inline-block w-2.5 h-2.5 rounded-full mr-1.5 align-middle"
+                      className="inline-block w-2 h-2 rounded-full mr-1.5 align-middle"
                       style={{ backgroundColor: BORDER_COLORS[i % BORDER_COLORS.length] }}
                     />
                     {n.name}
@@ -56,47 +56,38 @@ export function ComparisonPanel({ neighborhoods }: ComparisonPanelProps) {
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
-              {/* Population */}
+            <tbody className="divide-y divide-zinc-100">
               <MetricRow
                 label="Population"
                 neighborhoods={neighborhoods}
                 getValue={(n) =>
                   n.rawData.census.population > 0
                     ? n.rawData.census.population.toLocaleString()
-                    : 'N/A'
+                    : '—'
                 }
                 getNum={(n) => n.rawData.census.population}
               />
-
-              {/* Median Income */}
               <MetricRow
                 label="Median Income"
                 neighborhoods={neighborhoods}
                 getValue={(n) =>
                   n.rawData.census.medianIncome > 0
                     ? `$${n.rawData.census.medianIncome.toLocaleString()}`
-                    : 'N/A'
+                    : '—'
                 }
                 getNum={(n) => n.rawData.census.medianIncome}
                 highlight="high"
               />
-
-              {/* Median Age */}
               <MetricRow
                 label="Median Age"
                 neighborhoods={neighborhoods}
                 getValue={(n) =>
-                  n.rawData.census.medianAge > 0
-                    ? String(n.rawData.census.medianAge)
-                    : 'N/A'
+                  n.rawData.census.medianAge > 0 ? String(n.rawData.census.medianAge) : '—'
                 }
                 getNum={(n) => n.rawData.census.medianAge}
               />
-
-              {/* Sentiment */}
               <tr className="bg-white">
-                <td className="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">
+                <td className="px-4 py-3 text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">
                   Sentiment
                 </td>
                 {neighborhoods.map((n) => (
@@ -105,8 +96,6 @@ export function ComparisonPanel({ neighborhoods }: ComparisonPanelProps) {
                   </td>
                 ))}
               </tr>
-
-              {/* Walkability (amenity count) */}
               <MetricRow
                 label="Nearby Places"
                 neighborhoods={neighborhoods}
@@ -114,10 +103,8 @@ export function ComparisonPanel({ neighborhoods }: ComparisonPanelProps) {
                 getNum={(n) => n.rawData.amenities.length}
                 highlight="high"
               />
-
-              {/* Lifestyle Tags */}
               <tr className="bg-white">
-                <td className="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">
+                <td className="px-4 py-3 text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">
                   Lifestyle
                 </td>
                 {neighborhoods.map((n) => (
@@ -129,13 +116,11 @@ export function ComparisonPanel({ neighborhoods }: ComparisonPanelProps) {
                         ))}
                       </div>
                     ) : (
-                      <span className="text-gray-400 text-xs block text-center">—</span>
+                      <span className="text-zinc-400 text-xs block text-center">—</span>
                     )}
                   </td>
                 ))}
               </tr>
-
-              {/* Community posts */}
               <MetricRow
                 label="Community Posts"
                 neighborhoods={neighborhoods}
@@ -161,21 +146,18 @@ interface MetricRowProps {
   highlight?: 'high' | 'low';
 }
 
-/**
- * Renders one row in the comparison table.
- * Highlights the best value in green (highest if highlight="high", lowest if "low").
- */
 function MetricRow({ label, neighborhoods, getValue, getNum, highlight }: MetricRowProps) {
   const nums = neighborhoods.map(getNum).filter((v) => v > 0);
-  const best = nums.length > 0
-    ? highlight === 'low'
-      ? Math.min(...nums)
-      : Math.max(...nums)
-    : null;
+  const best =
+    nums.length > 0
+      ? highlight === 'low'
+        ? Math.min(...nums)
+        : Math.max(...nums)
+      : null;
 
   return (
     <tr className="bg-white">
-      <td className="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">
+      <td className="px-4 py-3 text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">
         {label}
       </td>
       {neighborhoods.map((n) => {
@@ -185,13 +167,13 @@ function MetricRow({ label, neighborhoods, getValue, getNum, highlight }: Metric
           <td
             key={n._id}
             className={`px-4 py-3 text-center font-semibold ${
-              isBest ? 'text-emerald-600' : 'text-gray-800'
+              isBest ? 'text-emerald-700' : 'text-zinc-800'
             }`}
           >
             {isBest ? (
               <span className="inline-flex items-center gap-1">
                 {getValue(n)}
-                <span className="text-emerald-500 text-xs">▲</span>
+                <span className="text-emerald-600 text-xs">▲</span>
               </span>
             ) : (
               getValue(n)
@@ -212,20 +194,18 @@ interface NeighborhoodColumnProps {
 function NeighborhoodColumn({ neighborhood: n, color, onRemove }: NeighborhoodColumnProps) {
   return (
     <div
-      className="bg-white rounded-2xl shadow-md p-5 space-y-3 border-t-4 flex-shrink-0 w-64"
-      style={{ borderColor: color }}
+      className="bg-white rounded-xl border border-zinc-200 shadow-sm p-5 space-y-3 border-t-4 flex-shrink-0 w-60"
+      style={{ borderTopColor: color }}
     >
       <div className="flex items-start justify-between gap-2">
         <div>
-          <h3 className="font-bold text-gray-900 text-base leading-tight">{n.name}</h3>
-          <p className="text-xs text-gray-500">ZIP: {n.zip}</p>
+          <h3 className="font-semibold text-zinc-900 text-sm leading-tight">{n.name}</h3>
+          <p className="text-[11px] text-zinc-400 font-mono mt-0.5">ZIP {n.zip}</p>
         </div>
         <SentimentBadge score={n.sentimentScore} />
       </div>
 
-      <p className="text-xs text-gray-600 leading-relaxed line-clamp-4">
-        {n.vibeSummary}
-      </p>
+      <p className="text-xs text-zinc-500 leading-relaxed line-clamp-4">{n.vibeSummary}</p>
 
       {n.lifestyleTags.length > 0 && (
         <div className="flex flex-wrap gap-1">
@@ -237,7 +217,7 @@ function NeighborhoodColumn({ neighborhood: n, color, onRemove }: NeighborhoodCo
 
       <button
         onClick={onRemove}
-        className="w-full text-xs text-red-500 hover:text-red-700 py-1 transition-colors"
+        className="w-full text-xs text-zinc-400 hover:text-red-600 py-1 transition-colors"
       >
         Remove
       </button>
