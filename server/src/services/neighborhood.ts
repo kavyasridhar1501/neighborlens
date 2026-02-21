@@ -278,14 +278,36 @@ export async function getNeighborhoodData(
     ...placesData.reviews,
   ].filter(Boolean);
 
-  const mlInput = allTexts.length > 0 ? allTexts : [`neighborhood: ${normalizedQuery}`];
+  const mlInput = allTexts.length > 0 ? allTexts : [];
 
-  // 5. Run ML services in parallel
-  const [sentimentScore, vibeSummary, lifestyleTags] = await Promise.all([
-    analyzeSentiment(mlInput),
-    generateVibeSummary(mlInput),
-    classifyLifestyleTags(mlInput.join(' ')),
+  // 5. Run ML services in parallel (skip if no community text to analyze)
+  const [sentimentScore, mlSummary, lifestyleTags] = await Promise.all([
+    mlInput.length > 0 ? analyzeSentiment(mlInput) : Promise.resolve(0.5),
+    mlInput.length > 0 ? generateVibeSummary(mlInput) : Promise.resolve(''),
+    mlInput.length > 0
+      ? classifyLifestyleTags(mlInput.join(' '))
+      : Promise.resolve([]),
   ]);
+
+  // Build a census-based fallback when ML has no community text to work with
+  const vibeSummary =
+    mlSummary ||
+    (() => {
+      const parts: string[] = [];
+      if (censusData.population > 0)
+        parts.push(
+          `Population of ${censusData.population.toLocaleString()}`
+        );
+      if (censusData.medianIncome > 0)
+        parts.push(
+          `median household income $${censusData.medianIncome.toLocaleString()}`
+        );
+      if (censusData.medianAge > 0)
+        parts.push(`median age ${censusData.medianAge}`);
+      return parts.length > 0
+        ? `${censusData.name}: ${parts.join(', ')}.`
+        : 'No community data available for this area.';
+    })();
 
   // 6. Save to cache and return
   return saveToCache({
