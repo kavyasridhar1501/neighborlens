@@ -52,82 +52,117 @@ function isZip(query: string): boolean {
  * to a 5-digit ZIP code.
  *
  * Strategy:
- *  1. Forward geocode the query to get coordinates + formatted display name.
- *  2. If the forward geocode result already has a postal_code component, use it.
- *  3. Otherwise reverse-geocode the returned lat/lng with result_type=postal_code
- *     — this works for broad city/neighborhood inputs that return no postal code
- *     in their own address components (e.g. "Brooklyn NY", "Austin TX").
+ *  1. Forward geocode via Google to get coordinates + formatted display name.
+ *  2. If the result already has a postal_code component, use it.
+ *  3. Otherwise reverse-geocode the returned lat/lng with result_type=postal_code.
+ *  4. If Google fails or returns no ZIP, fall back to the free Census Bureau
+ *     Geocoder which returns the ZCTA (ZIP area) that contains the location.
  */
 async function resolveToZip(
   query: string
 ): Promise<{ zip: string; displayName: string }> {
   if (isZip(query)) return { zip: query, displayName: query };
 
-  try {
-    const apiKey = process.env.GOOGLE_PLACES_API_KEY ?? '';
+  const apiKey = process.env.GOOGLE_PLACES_API_KEY ?? '';
+  let displayName = query;
+  let resolvedZip: string | null = null;
 
-    // Step 1: forward geocode
+  // --- Strategy 1 & 2: Google Geocoding ---
+  try {
     const geoUrl = new URL('https://maps.googleapis.com/maps/api/geocode/json');
     geoUrl.searchParams.set('address', query);
     geoUrl.searchParams.set('components', 'country:US');
     geoUrl.searchParams.set('key', apiKey);
 
     const res = await fetch(geoUrl.toString());
-    if (!res.ok) {
-      console.error(`[Geocode] HTTP ${res.status} for "${query}"`);
-      return { zip: query, displayName: query };
-    }
+    if (res.ok) {
+      const data = (await res.json()) as GoogleGeocodeResult;
+      const topResult = !data.error_message ? data.results[0] : undefined;
 
-    const data = (await res.json()) as GoogleGeocodeResult;
-    if (data.error_message) {
-      console.error(`[Geocode] API error: ${data.error_message}`);
-      return { zip: query, displayName: query };
-    }
+      if (topResult) {
+        displayName =
+          topResult.formatted_address.replace(/,\s*USA$/, '').trim() || query;
 
-    const topResult = data.results[0];
-    if (!topResult) {
-      console.warn(`[Geocode] No results for "${query}"`);
-      return { zip: query, displayName: query };
-    }
+        // Check for postal_code directly in address components
+        let postalCode = topResult.address_components.find((c) =>
+          c.types.includes('postal_code')
+        )?.short_name;
 
-    const displayName =
-      topResult.formatted_address.replace(/,\s*USA$/, '').trim() || query;
+        // Reverse-geocode from coordinates when no postal_code in forward result
+        if (!postalCode || !/^\d{5}$/.test(postalCode)) {
+          const { lat, lng } = topResult.geometry.location;
+          const revUrl = new URL('https://maps.googleapis.com/maps/api/geocode/json');
+          revUrl.searchParams.set('latlng', `${lat},${lng}`);
+          revUrl.searchParams.set('result_type', 'postal_code');
+          revUrl.searchParams.set('key', apiKey);
 
-    // Check if the forward geocode already returned a postal code
-    let postalCode = topResult.address_components.find((c) =>
-      c.types.includes('postal_code')
-    )?.short_name;
+          const revRes = await fetch(revUrl.toString());
+          if (revRes.ok) {
+            const revData = (await revRes.json()) as GoogleGeocodeResult;
+            postalCode = revData.results[0]?.address_components.find((c) =>
+              c.types.includes('postal_code')
+            )?.short_name;
+          }
+        }
 
-    // Step 2: reverse geocode from coordinates when no postal code was returned
-    // (city/neighborhood queries rarely include postal_code in their own result)
-    if (!postalCode || !/^\d{5}$/.test(postalCode)) {
-      const { lat, lng } = topResult.geometry.location;
-      const revUrl = new URL('https://maps.googleapis.com/maps/api/geocode/json');
-      revUrl.searchParams.set('latlng', `${lat},${lng}`);
-      revUrl.searchParams.set('result_type', 'postal_code');
-      revUrl.searchParams.set('key', apiKey);
-
-      const revRes = await fetch(revUrl.toString());
-      if (revRes.ok) {
-        const revData = (await revRes.json()) as GoogleGeocodeResult;
-        const zipResult = revData.results[0];
-        if (zipResult) {
-          postalCode = zipResult.address_components.find((c) =>
-            c.types.includes('postal_code')
-          )?.short_name;
+        if (postalCode && /^\d{5}$/.test(postalCode)) {
+          resolvedZip = postalCode;
+          console.log(`[Google] "${query}" → ZIP ${resolvedZip} (${displayName})`);
         }
       }
     }
-
-    const resolvedZip =
-      postalCode && /^\d{5}$/.test(postalCode) ? postalCode : query;
-
-    console.log(`[Geocode] "${query}" → ZIP ${resolvedZip} (${displayName})`);
-    return { zip: resolvedZip, displayName };
   } catch (err) {
-    console.error(`[Geocode] Error for "${query}":`, err);
-    return { zip: query, displayName: query };
+    console.error(`[Google] Geocode error for "${query}":`, err);
   }
+
+  // --- Strategy 3: Census Bureau Geocoder (free, no API key) ---
+  if (!resolvedZip) {
+    try {
+      const censusGeoUrl = new URL(
+        'https://geocoding.geo.census.gov/geocoder/geographies/onelineaddress'
+      );
+      censusGeoUrl.searchParams.set('address', query);
+      censusGeoUrl.searchParams.set('benchmark', 'Public_AR_Current');
+      censusGeoUrl.searchParams.set('vintage', 'Current_Current');
+      censusGeoUrl.searchParams.set('layers', '86'); // ZCTA5 layer
+      censusGeoUrl.searchParams.set('format', 'json');
+
+      const res = await fetch(censusGeoUrl.toString());
+      if (res.ok) {
+        const data = (await res.json()) as {
+          result?: {
+            addressMatches?: Array<{
+              matchedAddress?: string;
+              geographies?: {
+                'ZCTA5 - Current'?: Array<{ ZCTA5CE20?: string }>;
+                '2020 ZCTA5 Census Tabulation Areas'?: Array<{ ZCTA5CE20?: string }>;
+              };
+            }>;
+          };
+        };
+        const match = data.result?.addressMatches?.[0];
+        if (match) {
+          const zctaLayers = match.geographies ?? {};
+          const zctaEntry =
+            (zctaLayers['ZCTA5 - Current'] ?? zctaLayers['2020 ZCTA5 Census Tabulation Areas'] ?? [])[0];
+          const zcta = zctaEntry?.ZCTA5CE20;
+          if (zcta && /^\d{5}$/.test(zcta)) {
+            resolvedZip = zcta;
+            if (match.matchedAddress) displayName = match.matchedAddress;
+            console.log(`[CensusGeo] "${query}" → ZIP ${resolvedZip}`);
+          }
+        }
+      }
+    } catch (err) {
+      console.error(`[CensusGeo] Error for "${query}":`, err);
+    }
+  }
+
+  if (!resolvedZip) {
+    console.warn(`[Geocode] Could not resolve ZIP for "${query}"`);
+  }
+
+  return { zip: resolvedZip ?? query, displayName };
 }
 
 /**
@@ -391,12 +426,12 @@ export async function getNeighborhoodData(
 ): Promise<INeighborhood> {
   const normalizedQuery = query.trim();
 
-  // 1. Check cache (keyed on the original query so "Brooklyn NY" and "11201" cache separately)
-  const cached = await checkCache(normalizedQuery);
-  if (cached) return cached;
-
-  // 2. Resolve city/state/country → ZIP code for Census lookup
+  // 1. Resolve city/state/country → ZIP code first so the cache key is always a clean ZIP
   const { zip, displayName: geocodedName } = await resolveToZip(normalizedQuery);
+
+  // 2. Check cache by resolved ZIP (skips any old entries where zip was stored as raw text)
+  const cached = await checkCache(zip);
+  if (cached) return cached;
 
   // 3. Fetch external data in parallel (Census uses ZIP; Reddit/Places use the original query)
   const [censusData, redditPosts, placesData] = await Promise.all([
